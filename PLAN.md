@@ -69,8 +69,8 @@ public/assets/
   PLACEHOLDERS.md              # lists placeholder assets still in use (Section 5)
   maps/map.json
   tilesets/
-  sprites/                     # player.png, npcs.png, npcs.json, icons.png
-  fonts/                       # ui.png + ui.xml (bitmap font)
+  sprites/                     # player.png, npc1.png through npc7.png, npcs.json, icons.png
+  fonts/                       # gridwright_5x7_regular.png + .fnt (bitmap font)
   scenarios/                   # default_murder.json, default_heist.json, default_escape.json,
                                # default_sabotage.json, default_diplomacy.json
 tests/
@@ -86,7 +86,7 @@ tests/
 
 - **Tilemap Loading, Anchors, and Fixtures:** Loads the supplied tilemap according to the convention in Section 4.
 - **Player Start:** Spawns the player at the single `player_start` object authored in the map. The LLM never chooses or changes it.
-- **Collision:** Uses Arcade Physics. Tiles marked `collides = true` block movement. Fixtures and NPCs are 16×16 static bodies centered on their map/anchor point. The player's body is 10×10 px, bottom-centered on the sprite (at the feet), so 1-tile-wide corridors and doorways are easy to pass through.
+- **Collision:** Uses Arcade Physics. Tiles marked `collides = true` block movement. Fixtures and NPCs are 16×16 static bodies centered on their map/anchor point. The player's body is 10×10 px, bottom-centered on its 16×32 frame (offset `x = 3`, `y = 22` from the frame's top-left), so 1-tile-wide corridors and doorways are easy to pass through. With the sprite centered on its map position, the body's center is 11 px below the sprite center. Map validation uses this same offset.
 - **Entity Spawning:** Places scenario characters at anchor coordinates according to the AI's `npc_spawns`. It never places items in the world.
 - **Inventory Items:** Items are created only when an interaction runs `spawn_item`, which puts them straight into the player's inventory. `destroy_item` removes them. The inventory is always empty at the start of a game.
 - **Core Loop and Input:** Top-down movement (Section 8), tile collision, and the UI described in Section 8.
@@ -139,23 +139,38 @@ The map is authored in **Tiled** and exported as JSON to `public/assets/maps/map
 - Bodies don't overlap (checked as rectangles; touching edges is fine). Each anchor's NPC body is the 16×16 square centered on the anchor. The player-start body is the player's 10×10 feet body (Section 3) for a sprite centered on `player_start`.
   - No anchor's NPC body overlaps a colliding tile, a fixture's 16×16 footprint, or another anchor's NPC body.
   - The player-start body doesn't overlap a colliding tile, a fixture's footprint, or any anchor's NPC body.
-- `npcs.json` is valid, and its length equals the NPC variant count (Section 5).
+- All seven NPC sheets load and contain the required frame rectangle (Section 5). `npcs.json` is valid and contains exactly seven descriptions, one per sheet.
 - All five default scenarios pass the full scenario validator, including the solver, against the parsed map (Section 9).
 
 ---
 
 ## 5. Sprite and Font Asset Convention (Supplied by the Project Owner)
 
-Sprite files live in `public/assets/sprites/`. All sprite frames are **16×16 px**.
+Sprite files live in `public/assets/sprites/`. Player and NPC frames are **16×32 px**; icon frames are **16×16 px**.
 
 | File | Layout |
 |---|---|
-| `player.png` | 3 columns × 4 rows. Rows in order: down, left, right, up. Columns: 3 walk frames. Column 0 is the idle frame. |
-| `npcs.png` | 3 columns. Each NPC variant is a block of 4 rows with the same layout as `player.png`. `sprite_index` = block index, so variant `v` occupies rows `4v` to `4v+3`. The variant count is the image height ÷ 64 px and is read at runtime. |
-| `npcs.json` | JSON array of strings, one short appearance description (1–80 characters) per NPC variant, in `sprite_index` order, e.g. `["elderly man in a grey suit", "young woman in a maid's uniform"]`. Its length must equal the variant count. The descriptions are sent in the prompt so the AI can pick fitting sprites. |
+| `player.png` | Supplied 896×656 animation sheet. Use 16×32 frames from the second row for idle and the third row for walking (zero-based rows 1 and 2). Each row's first 24 frames contains four groups of six, in order: right, forward (down), left, back (up). Ignore all other frames. |
+| `npc1.png` through `npc7.png` | Seven separate animation sheets with the same frame layout as `player.png`. `sprite_index` is zero-based: 0 selects `npc1.png`, 1 selects `npc2.png`, through 6 selecting `npc7.png`. NPCs do not animate: use only the first down-facing idle frame, a 16×32 rectangle at `x = 96`, `y = 32`, from each sheet. No combined `npcs.png` is required. |
+| `npcs.json` | JSON array of exactly seven strings, one short appearance description (1–80 characters) per NPC sheet. Entries are in file order: `npc1.png` through `npc7.png`, corresponding to `sprite_index` 0–6. The descriptions are sent in the prompt so the AI can pick fitting sprites. |
 | `icons.png` | 5 frames in one row, in this order: `icon_paper`, `icon_bottle`, `icon_tool`, `icon_trinket`, `icon_hazard`. |
 
-The UI font lives in `public/assets/fonts/` as a pixel-art bitmap font in BMFont format (`ui.png` + `ui.xml`). It's loaded with `load.bitmapFont` and used for **all** in-game text, at integer multiples of its native size.
+**Player frame extraction:** Load `player.png` as an image and register named texture frames for the selected rectangles, rather than assuming the entire sheet is a regular spritesheet (its height is not a multiple of 32). For frame `i` from 0 to 5, each rectangle is 16×32 at `x = (direction_offset + i) * 16`. Idle frames use `y = 32`; walking frames use `y = 64`.
+
+| Facing | `direction_offset` | Columns (zero-based) |
+|---|---|---|
+| Right | 0 | 0–5 |
+| Down (forward) | 6 | 6–11 |
+| Left | 12 | 12–17 |
+| Up (back) | 18 | 18–23 |
+
+Create one looping six-frame idle animation and one looping six-frame walking animation per direction. Movement selects walking; stopping selects idle for the last facing direction. Animation frame rates are tunable constants in `src/config.ts`. Keep the sprite origin centered and its physics body fixed across animation frames.
+
+**NPC frame extraction:** Load each of the seven NPC sheets as a separate image and register its single down-facing frame using the rectangle above. The NPC variant count is seven (the number of sheets), not a value calculated from image height. Keep each sprite centered on its anchor. Its 16×16 static body is also centered on the anchor (offset `x = 0`, `y = 8` within the 16×32 frame), preserving the map's existing overlap and path guarantees. Do not create NPC animations or load unused animation frames.
+
+The UI font is the supplied Gridwright 5x7 Regular 2× bitmap font in `public/assets/fonts/`: `gridwright_5x7_regular.png` and its matching `gridwright_5x7_regular.fnt`. Keep these file names unchanged. The font has a native size of 18 px, a line height of 20 px, and one 160×108 texture page. Its `.fnt` uses AngelCode's plain-text format, not XML. During implementation, convert this metadata once into a matching BMFont XML asset (`gridwright_5x7_regular.xml`) for Phaser's `load.bitmapFont`; retain the original `.fnt` as the source. Use this font for **all** in-game text, at integer multiples of 18 px.
+
+The supplied font covers only printable ASCII (character IDs 32–126). Before bitmap rendering, a shared text helper converts curly quotes to straight quotes, en/em dashes to `-`, and ellipses to `...`; preserves line breaks; and replaces remaining unsupported characters with `?` so text never silently loses glyphs. Apply this to every bitmap-text surface, including generated scenario text, names, and fallback messages, without changing the scenario's stored text or IDs. Ask the model to use printable ASCII text in the prompt. Include the font README and license with the assets before distribution and follow their redistribution terms.
 
 **Placeholders:** If any of these files or the map is missing during development, the implementing agent creates placeholder files that follow these conventions, so work and tests can continue. Placeholders use the **real file names and paths** so the game loads them unchanged. Every placeholder is listed in `public/assets/PLACEHOLDERS.md`. When a real asset replaces a placeholder, remove its entry from that file. When the real map arrives, all five default scenarios must be re-validated against it.
 
@@ -356,7 +371,7 @@ One generic handler runs every interaction. No item or character has custom hard
 
 **Modal rule:** While any dialogue, menu, inventory, pause, or end screen is open, the player stops moving and world input is ignored.
 
-**Facing:** The player always faces one of 4 directions (down, left, right, up), which picks the walk-animation row and the interaction cone. When moving diagonally, the horizontal direction wins (e.g. up-left faces left). When the player stops, the last facing direction stays.
+**Facing:** The player always faces one of 4 directions (down, left, right, up), which picks the idle/walking animation group (Section 5) and the interaction cone. When moving diagonally, the horizontal direction wins (e.g. up-left faces left). When the player stops, the last facing direction stays and its idle animation loops.
 
 ### World Interaction
 
@@ -563,7 +578,7 @@ The validator collects **all** errors as readable messages (they feed the repair
 
 1. Scaffold Vite + TypeScript (strict) + Phaser 3 (pinned) + Vitest + Zod + OpenAI SDK. Set up `.gitignore` and npm scripts. Create any missing assets as placeholders and list them in `public/assets/PLACEHOLDERS.md` (Section 5).
 2. Implement the pure map parser and validator (Section 4). Load `map.json` first, then the tilesets, sprites, `npcs.json`, and bitmap font (Sections 4–5). Show the boot error screen on validation failure.
-3. Render layers, apply Arcade Physics collision, and spawn the player at `player_start` with its feet-sized body, 8-way movement, 4-way facing, and walk animations. Add camera follow and scaling (Section 8).
+3. Render layers, apply Arcade Physics collision, and spawn the player at `player_start` with its feet-sized body, 8-way movement, 4-way facing, and six-frame idle/walking animations extracted as specified in Section 5. Add camera follow and scaling (Section 8).
 4. Spawn fixtures as 16×16 static bodies. Add facing-cone target selection with the "E" prompt.
 
 ### Phase 2: Engine, Validation, and UI
@@ -586,7 +601,7 @@ The validator collects **all** errors as readable messages (they feed the repair
 
 **Unit tests (Vitest) cover at least:**
 
-- **Map parser / boot validation:** each map validation error, including tile objects, text-length limits, and an `npcs.json` length mismatch.
+- **Map parser / boot validation:** each map validation error, including tile objects, text-length limits, missing NPC sheets or sheets too small for the required frame, and an `npcs.json` length other than seven.
 - **Validator:** at least one failing case for every rule in Section 10, plus a fully valid scenario.
 - **Interaction engine:**
   - the eligible interaction with the most conditions winning (a no-condition interaction acts only as a fallback), and ties going to array order
@@ -619,6 +634,8 @@ The validator collects **all** errors as readable messages (they feed the repair
 
 **Manual checks:**
 
+- The supplied player sheet renders 16×32 frames without clipping or adjacent-frame bleed; idle and walking animations loop in all four directions, diagonal movement faces horizontally, and stopping preserves facing. The 10×10 feet body stays fixed at the documented offset.
+- Each `sprite_index` from 0 through 6 selects the corresponding NPC sheet. NPCs show the static down-facing frame without clipping, with their 16×16 bodies centered on their anchors.
 - `npm run build` succeeds and `dist/` contains no key.
 - With no key, the default scenario for the chosen genre plays and can be won.
 - With a valid key, a generated scenario loads, or the game falls back after one repair attempt.
