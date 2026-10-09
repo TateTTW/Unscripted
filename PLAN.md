@@ -133,7 +133,7 @@ If any of these files or the map is missing during development, the implementing
 
 ## 6. Data Schema: Load-Time Scenario Blueprint
 
-The OpenAI response must be one JSON object with the structure below. The values are illustrative. `npc_spawns` lists scenario characters only; fixtures and the player start come from the map. `inventory_items` defines item types, not live items.
+The OpenAI response must be one JSON object with the structure below. The values are illustrative. `npc_spawns` lists scenario characters only; fixtures and the player start come from the map. `inventory_items` defines the items; an item isn't in play until a `spawn_item` event gives it to the player.
 
 ```json
 {
@@ -206,7 +206,18 @@ Unknown fields are rejected. All fields are required. `target_2` is the only fie
 
 ### Mutable State
 
-Every NPC, fixture, and **item type** has a `current_state` string, and they all start as `"default"`. An item type's state belongs to the type as a whole, not to individual units. It stays the same whether the player holds 0 or many units. `required_state` conditions and `change_state` events may target NPCs, fixtures, or item types.
+**Every ID is exactly one thing.** Each `item_id` is a single, unique object, never a stack or a count. At any moment the player either holds it or doesn't. If a scenario needs two similar items, it defines two IDs (e.g. `brass_key_1`, `brass_key_2`).
+
+Every NPC, fixture, and item has one `current_state` string, and they all start as `"default"`. An item keeps its state whether or not it's held; if it is destroyed and spawned again, it comes back with the state it had. `required_state` conditions and `change_state` events may target NPCs, fixtures, or items.
+
+The engine keeps this runtime state in memory. It is not part of the scenario JSON:
+
+```json
+{
+  "states": { "guard_captain": "panicked", "desk_study": "searched", "brass_key_1": "default" },
+  "held_items": ["brass_key_1", "evidence_letter"]
+}
+```
 
 ### Events
 
@@ -214,9 +225,9 @@ Each entry in `events` has exactly the fields shown for its type:
 
 | Event | Object shape | Effect |
 |---|---|---|
-| `spawn_item` | `{ "event": "spawn_item", "new_item_id": "evidence_letter" }` | Adds one unit of a defined item type to the inventory. |
-| `destroy_item` | `{ "event": "destroy_item", "target_id": "evidence_letter" }` | Removes one unit. Invalid if the player holds none. |
-| `change_state` | `{ "event": "change_state", "target_id": "guard_captain", "new_state": "panicked" }` | Sets the NPC, fixture, or item type's `current_state`. |
+| `spawn_item` | `{ "event": "spawn_item", "new_item_id": "evidence_letter" }` | Gives the item to the player. Invalid if the player already holds it. |
+| `destroy_item` | `{ "event": "destroy_item", "target_id": "evidence_letter" }` | Removes the item from the inventory. Invalid if the player doesn't hold it. |
+| `change_state` | `{ "event": "change_state", "target_id": "guard_captain", "new_state": "panicked" }` | Sets the NPC, fixture, or item's `current_state`. |
 | `show_dialogue` | `{ "event": "show_dialogue", "text": "The guard looks away." }` | Shows one dialogue page. |
 | `trigger_end` | `{ "event": "trigger_end", "outcome": "WIN", "text": "You escaped with the evidence." }` | Ends the game with `WIN` or `LOSS`. At most once per interaction, and it must be the last event. |
 
@@ -230,15 +241,15 @@ Example: a combine that turns a note and a key into a pass:
 ]
 ```
 
-**Atomic execution:** The engine runs the event list in order against a temporary copy of the game state. If any event is invalid (for example, destroying an item the player doesn't hold), nothing is applied and the player sees **"Nothing happens."** Otherwise all changes are committed together. Inventory counts are tracked per item type. A player may hold several units of the same type.
+**Atomic execution:** The engine runs the event list in order against a temporary copy of the game state. If any event is invalid (for example, destroying an item the player doesn't hold, or spawning one they already hold), nothing is applied and the player sees **"Nothing happens."** Otherwise all changes are committed together.
 
 ### Target Contract
 
 | Action | `target_1` | `target_2` | Availability |
 |---|---|---|---|
 | `TALK` | NPC | `null` | — |
-| `INSPECT` | NPC, fixture, or item | `null` | An item target must be held (count ≥ 1). |
-| `COMBINE` | item | item | Unordered pair. Both must be held; if they're the same type, at least 2 units are needed. |
+| `INSPECT` | NPC, fixture, or item | `null` | An item target must be held. |
+| `COMBINE` | item | item | Unordered pair of two **different** items. Both must be held. |
 | `USE` | item | NPC or fixture | Order matters. The item must be held. |
 
 Using an item with no target (e.g. drinking a potion) is not supported.
@@ -306,9 +317,9 @@ One generic handler runs every interaction. No item or character has custom hard
 
 ### Inventory Panel (`I`)
 
-- Lists held item types with icon, name, and count.
+- Lists held items with icon and name.
 - Selecting an item offers `INSPECT`, `COMBINE`, or Cancel.
-- `COMBINE` then asks for a second held item. The same type can be picked again only if the player holds at least 2.
+- `COMBINE` then asks for a second, different held item.
 
 ### Dialogue and Feedback
 
@@ -405,18 +416,18 @@ The validator collects **all** errors as readable messages (they feed the repair
    - Every target, `required_state.target_id`, and event `target_id` / `new_item_id` refers to a declared entity of an allowed type.
    - `genre` equals the requested genre.
 3. **Target contract:** Every interaction's `action` / `target_1` / `target_2` combination follows the contract in Section 6.
-4. **Events:** At most one `trigger_end` per interaction, and it must be last.
+4. **Events:** At most one `trigger_end` per interaction, and it must be last. An interaction can't spawn the same item twice. `COMBINE` can't name the same item as both targets.
 5. **No dead duplicates:** Reject two interactions with the same action, the same targets (COMBINE pairs compared in either order), and the same set of conditions (order doesn't matter). The lower-priority or later one could never fire.
 6. **Spawn-once rule:** Every interaction that contains `spawn_item` must meet at least one of these:
    - **Gate:** It has a `required_state` condition `{ X, S }`, and its events include a `change_state` on `X` to a state other than `S`. It can't fire again until something changes `X` back.
-   - **Exchange:** It has at least as many `destroy_item` events as `spawn_item` events, so the total number of items never goes up.
+   - **Consume:** It's a `COMBINE` or `USE`, and its events destroy at least one of its own item targets. It can't fire again unless that item is obtained again.
 7. **Static winnability:**
    - At least one `trigger_end` with `outcome: "WIN"` exists.
-   - Every defined item type is spawned by at least one interaction.
+   - Every defined item is spawned by at least one interaction.
    - Every item used as an `INSPECT`, `COMBINE`, or `USE` target, or as a `destroy_item` target, can be spawned.
    - Every `required_state` state other than `"default"` is set by some `change_state` on that same target.
 8. **Reachability solver:** A breadth-first search from the initial state (all states `"default"`, empty inventory) proves that a `WIN` can be reached.
-   - A node is the full set of states plus inventory counts, serialized in a canonical form.
+   - A node is the full set of states plus the set of held items, serialized in a canonical form.
    - Edges are the distinct `(action, targets)` inputs found in `interactions`, limited to the ones currently available (Section 6). Each edge is resolved by **the same interaction-engine function the game uses**.
    - Inputs that produce no change are skipped. A `LOSS` is a dead end.
    - The search stops with success when a `WIN` fires.
@@ -435,7 +446,7 @@ The validator collects **all** errors as readable messages (they feed the repair
 
 ### Phase 2: Engine, Validation, and UI
 
-1. Implement the pure game state (`current_state` for NPCs, fixtures, and item types; inventory counts) and the interaction engine (Section 7), including atomic execution.
+1. Implement the pure game state (`current_state` for NPCs, fixtures, and items; the set of held items) and the interaction engine (Section 7), including atomic execution.
 2. Implement the Zod schemas, the full validator, and the solver (Section 10).
 3. Write `default_scenario.json` for the supplied map and validate it.
 4. Build the UI: verb menu, item picker, inventory panel with COMBINE, dialogue pages, toasts, pause menu, end screen (Section 8).
@@ -457,9 +468,9 @@ The validator collects **all** errors as readable messages (they feed the repair
 - **Validator:** at least one failing case for every rule in Section 10, plus a fully valid scenario.
 - **Interaction engine:**
   - priority selection and ties going to array order
-  - conditions spanning several entities (an NPC, a fixture, and an item type)
+  - conditions spanning several entities (an NPC, a fixture, and an item)
   - COMBINE matching in either order
-  - same-type COMBINE needing 2 units
+  - spawning an already-held item failing the whole interaction
   - atomic rollback when a later event is invalid
   - no fall-through to the next candidate after a failed execution
   - the INSPECT `inspect_text` fallback
