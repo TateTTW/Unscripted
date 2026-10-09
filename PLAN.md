@@ -69,8 +69,7 @@ public/assets/
   PLACEHOLDERS.md              # lists placeholder assets still in use (Section 5)
   maps/map.json
   tilesets/
-  sprites/                     # player.png, npcs.png, npcs.json, fixtures.png,
-                               # fixtures.json, icons.png
+  sprites/                     # player.png, npcs.png, npcs.json, icons.png
   fonts/                       # ui.png + ui.xml (bitmap font)
   scenarios/                   # default_murder.json, default_heist.json, default_escape.json,
                                # default_sabotage.json, default_diplomacy.json
@@ -112,28 +111,31 @@ The map is authored in **Tiled** and exported as JSON to `public/assets/maps/map
 - **Tilesets:** Must be **embedded** in the map, not external `.tsx` files. Tileset images go in `public/assets/tilesets/`. The game uses each tileset's name in Tiled as its Phaser texture key when loading the image.
 - **Two-phase loading:** The game can't know which tileset images to load until it has read the map. `BootScene` loads `map.json` first, then loads each tileset image from `public/assets/tilesets/<file name>`. `<file name>` is the last part of the tileset's `image` path in the JSON. Tiled stores that path relative to the map, e.g. `../tilesets/interior.png` → `interior.png`.
 - **Tile layers:**
-  - `ground`: floor and decoration, no collision.
-  - `walls`: blocking tiles. Any tile with the boolean custom property `collides = true` blocks movement. The game calls `setCollisionByProperty({ collides: true })` on both tile layers.
+  - The map has exactly four tile layers, named `floor`, `walls`, `furniture`, and `borders`. They are drawn in the order they appear in the map file (bottom to top).
+    - `floor`: floor tiles.
+    - `walls`: wall tiles.
+    - `furniture`: furniture and other decoration tiles. A fixture's art is drawn here.
+    - `borders`: border and trim tiles.
+  - Collision is per tile, not per layer. Any tile with the boolean custom property `collides = true` (set on the tile in its tileset) blocks movement, on whichever layer it is painted. The game calls `setCollisionByProperty({ collides: true })` on **every** tile layer. Currently only the `borders` tileset tiles have `collides = true`; the `walls` and `interior` tilesets have none yet, and the map owner may add it later without any code change.
 - **Object layer `objects`:** Every object's Tiled **Class** is one of `anchor`, `fixture`, or `player_start`. Tiled exports Class as `type` in JSON; read `type` first, then `class`. Use point objects. If a rectangle object is used, its position is the rectangle's center. Tile objects (objects with a `gid`) are not allowed, because Tiled positions them by their bottom-left corner.
-- **Positions:** An object's position is the **center** of the sprite drawn there (fixture, NPC, or player). For overlap checks, fixtures and NPCs occupy the 16×16 square centered on that point.
+- **Positions:** An object's position is the **center** of the sprite drawn there (NPC or player) or of the fixture's tile art (fixtures draw no sprite). For overlap checks, fixtures and NPCs occupy the 16×16 square centered on that point.
 
 | Class | Custom properties | Notes |
 |---|---|---|
 | `anchor` | `id` (string, required), `label` (string, required, 1–80 characters) | `label` tells the AI where the anchor is, e.g. "beside the front door". At least 2 anchors. |
-| `fixture` | `id`, `display_name` (1–40 characters), `sprite` (string, required); `inspect_text` (string, optional, 1–300 characters when present) | `sprite` is a frame name in the `fixtures.json` atlas. |
+| `fixture` | `id`, `display_name` (1–40 characters); `inspect_text` (string, optional, 1–300 characters when present) | Invisible interaction point. The fixture's art is drawn in the tile layers; the game draws no sprite for it. |
 | `player_start` | none | Exactly one. |
 
 **Map author guarantees (not checked automatically):** Any subset of anchors may be occupied by NPCs, since the AI chooses which anchors to use. The map is authored so that, **even with every anchor occupied**, no NPC blocks a path. The player can then walk from `player_start` to within interaction range (Section 8) of every fixture and every anchor.
 
 **Boot validation:** These checks run when the game boots. A failure is a developer error: show a full-screen error listing every problem and stop. There is no fallback map.
 
-- Layers `ground`, `walls`, and `objects` exist.
+- Tile layers `floor`, `walls`, `furniture`, and `borders`, and object layer `objects`, exist.
 - There is exactly one `player_start`.
 - There are at least 2 anchors.
 - No object is a tile object (has a `gid`).
 - Every required property is present and non-empty, and every text property is within its length limit.
 - Every `id` matches `^[a-z][a-z0-9_]{0,39}$` and is unique across all map objects.
-- Every fixture `sprite` frame exists in the atlas.
 - Bodies don't overlap (checked as rectangles; touching edges is fine). Each anchor's NPC body is the 16×16 square centered on the anchor. The player-start body is the player's 10×10 feet body (Section 3) for a sprite centered on `player_start`.
   - No anchor's NPC body overlaps a colliding tile, a fixture's 16×16 footprint, or another anchor's NPC body.
   - The player-start body doesn't overlap a colliding tile, a fixture's footprint, or any anchor's NPC body.
@@ -151,7 +153,6 @@ Sprite files live in `public/assets/sprites/`. All sprite frames are **16×16 px
 | `player.png` | 3 columns × 4 rows. Rows in order: down, left, right, up. Columns: 3 walk frames. Column 0 is the idle frame. |
 | `npcs.png` | 3 columns. Each NPC variant is a block of 4 rows with the same layout as `player.png`. `sprite_index` = block index, so variant `v` occupies rows `4v` to `4v+3`. The variant count is the image height ÷ 64 px and is read at runtime. |
 | `npcs.json` | JSON array of strings, one short appearance description (1–80 characters) per NPC variant, in `sprite_index` order, e.g. `["elderly man in a grey suit", "young woman in a maid's uniform"]`. Its length must equal the variant count. The descriptions are sent in the prompt so the AI can pick fitting sprites. |
-| `fixtures.png` + `fixtures.json` | Phaser texture atlas (JSON hash). Frame names match the fixtures' `sprite` property. |
 | `icons.png` | 5 frames in one row, in this order: `icon_paper`, `icon_bottle`, `icon_tool`, `icon_trinket`, `icon_hazard`. |
 
 The UI font lives in `public/assets/fonts/` as a pixel-art bitmap font in BMFont format (`ui.png` + `ui.xml`). It's loaded with `load.bitmapFont` and used for **all** in-game text, at integer multiples of its native size.
@@ -361,7 +362,7 @@ One generic handler runs every interaction. No item or character has custom hard
 
 - **Target selection:** On `E`, find NPCs and fixtures whose center is within **24 px** (1.5 tiles) of the player's center and inside the facing cone (dot product of the facing direction and the direction to the target > 0.5). Pick the nearest. While a valid target exists, show a small "E" prompt above it.
 - **Verb menu:** Shows only valid verbs. NPCs: `TALK`, `INSPECT`, `USE`. Fixtures: `INSPECT`, `USE`. `USE` is hidden when the inventory is empty. Choosing `USE` opens an item picker that lists only held items.
-- NPCs and fixtures are static, immovable 16×16 bodies that block the player (Section 3). NPCs face down when idle.
+- NPCs and fixtures are static, immovable 16×16 bodies that block the player (Section 3). Fixtures have no sprite; they are invisible bodies over the tile art, so the "E" prompt is the only cue that a fixture is interactive. NPCs face down when idle.
 
 ### Inventory Panel (`I`)
 
