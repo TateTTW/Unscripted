@@ -1,0 +1,238 @@
+{
+  "scenario_title": "The Midnight Lock-In",
+  "genre": "ESCAPE",
+  "intro_text": "You accepted an invitation to Madame Voss's dinner party. Too late, you learn that her guests never leave: the doors are locked, and Mr. Grey, her doorkeeper, lets out only guests holding an exit pass stamped with Madame's own seal. Find a pass, find the seal, and find something to ink it with. Whatever you do, don't let Madame Voss catch you with her things.",
+  "npc_spawns": [
+    {
+      "entity_id": "mr_grey",
+      "display_name": "Mr. Grey",
+      "sprite_index": 0,
+      "placed_at": "front_center_2",
+      "inspect_text": "The doorkeeper. He stands in front of the only way out, stiff as a post."
+    },
+    {
+      "entity_id": "madame_voss",
+      "display_name": "Madame Voss",
+      "sprite_index": 3,
+      "placed_at": "living_room_2",
+      "inspect_text": "Your hostess. Her smile never reaches her eyes."
+    },
+    {
+      "entity_id": "felix",
+      "display_name": "Felix",
+      "sprite_index": 6,
+      "placed_at": "kitchen_2",
+      "inspect_text": "A fellow guest in a navy blazer. He has been here for three days, he says."
+    },
+    {
+      "entity_id": "ines",
+      "display_name": "Ines",
+      "sprite_index": 1,
+      "placed_at": "bedroom",
+      "inspect_text": "The maid. She folds the same towel over and over and avoids your gaze."
+    }
+  ],
+  "item_definitions": [
+    {
+      "item_id": "blank_pass",
+      "display_name": "Blank Exit Pass",
+      "inspect_text": "A printed card: 'EXIT PASS'. There is an empty circle where a seal should go.",
+      "icon_category": "icon_paper"
+    },
+    {
+      "item_id": "hairpin",
+      "display_name": "Hairpin",
+      "inspect_text": "A sturdy hairpin. Good for flimsy locks.",
+      "icon_category": "icon_tool"
+    },
+    {
+      "item_id": "host_seal",
+      "display_name": "Madame's Seal",
+      "inspect_text": "A brass seal engraved with a V. It is completely dry.",
+      "icon_category": "icon_trinket"
+    },
+    {
+      "item_id": "ink_bottle",
+      "display_name": "Bottle of Ink",
+      "inspect_text": "A small bottle of red sealing ink.",
+      "icon_category": "icon_bottle"
+    },
+    {
+      "item_id": "inked_seal",
+      "display_name": "Inked Seal",
+      "inspect_text": "Madame's seal, wet with red ink. Ready to stamp something.",
+      "icon_category": "icon_trinket"
+    },
+    {
+      "item_id": "stamped_pass",
+      "display_name": "Stamped Exit Pass",
+      "inspect_text": "An exit pass bearing Madame Voss's red V. It looks genuine.",
+      "icon_category": "icon_paper"
+    }
+  ],
+  "interactions": [
+    {
+      "action": "TALK",
+      "target_1": "felix",
+      "target_2": null,
+      "required_state": [{ "target_id": "felix", "state": "default" }],
+      "events": [
+        { "event": "show_dialogue", "text": "Felix: 'Another one, eh? Grey only opens the door for a pass with Madame's seal on it. I swiped a blank one but never found the seal.'" },
+        { "event": "show_dialogue", "text": "Felix: 'Take it. You look luckier than me.'" },
+        { "event": "change_state", "target_id": "felix", "new_state": "helped" },
+        { "event": "spawn_item", "new_item_id": "blank_pass" }
+      ]
+    },
+    {
+      "action": "TALK",
+      "target_1": "felix",
+      "target_2": null,
+      "required_state": [],
+      "events": [
+        { "event": "show_dialogue", "text": "Felix: 'Ask the maid. She knows where Madame keeps everything.'" }
+      ]
+    },
+    {
+      "action": "TALK",
+      "target_1": "ines",
+      "target_2": null,
+      "required_state": [],
+      "events": [
+        { "event": "show_dialogue", "text": "Ines (whispering): 'Madame locks her seal in the office desk. The lock is cheap - a hairpin would open it. I keep spares in the wardrobe.'" },
+        { "event": "show_dialogue", "text": "Ines: 'And never let Madame see you holding her seal.'" }
+      ]
+    },
+    {
+      "action": "INSPECT",
+      "target_1": "bedroom_wardrobe",
+      "target_2": null,
+      "required_state": [{ "target_id": "bedroom_wardrobe", "state": "default" }],
+      "events": [
+        { "event": "show_dialogue", "text": "Among the folded linens is a little tin of hairpins. You take one." },
+        { "event": "change_state", "target_id": "bedroom_wardrobe", "new_state": "searched" },
+        { "event": "spawn_item", "new_item_id": "hairpin" }
+      ]
+    },
+    {
+      "action": "USE",
+      "target_1": "hairpin",
+      "target_2": "office_desk",
+      "required_state": [
+        { "target_id": "hairpin", "state": null },
+        { "target_id": "office_desk", "state": "default" }
+      ],
+      "events": [
+        { "event": "show_dialogue", "text": "The hairpin bends, then the lock gives. Inside the drawer lies a brass seal engraved with a V." },
+        { "event": "change_state", "target_id": "office_desk", "new_state": "opened" },
+        { "event": "destroy_item", "target_id": "hairpin" },
+        { "event": "spawn_item", "new_item_id": "host_seal" }
+      ]
+    },
+    {
+      "action": "INSPECT",
+      "target_1": "office_bookcase",
+      "target_2": null,
+      "required_state": [{ "target_id": "office_bookcase", "state": "default" }],
+      "events": [
+        { "event": "show_dialogue", "text": "Behind a row of guest books - each with a name crossed out - is a bottle of red sealing ink." },
+        { "event": "change_state", "target_id": "office_bookcase", "new_state": "searched" },
+        { "event": "spawn_item", "new_item_id": "ink_bottle" }
+      ]
+    },
+    {
+      "action": "COMBINE",
+      "target_1": "host_seal",
+      "target_2": "ink_bottle",
+      "required_state": [
+        { "target_id": "host_seal", "state": null },
+        { "target_id": "ink_bottle", "state": null }
+      ],
+      "events": [
+        { "event": "show_dialogue", "text": "You press the seal into the ink. Its V glistens red." },
+        { "event": "spawn_item", "new_item_id": "inked_seal" },
+        { "event": "destroy_item", "target_id": "host_seal" },
+        { "event": "destroy_item", "target_id": "ink_bottle" }
+      ]
+    },
+    {
+      "action": "COMBINE",
+      "target_1": "inked_seal",
+      "target_2": "blank_pass",
+      "required_state": [
+        { "target_id": "inked_seal", "state": null },
+        { "target_id": "blank_pass", "state": null }
+      ],
+      "events": [
+        { "event": "show_dialogue", "text": "You stamp the pass. The red V sits perfectly inside the circle." },
+        { "event": "spawn_item", "new_item_id": "stamped_pass" },
+        { "event": "destroy_item", "target_id": "inked_seal" },
+        { "event": "destroy_item", "target_id": "blank_pass" }
+      ]
+    },
+    {
+      "action": "TALK",
+      "target_1": "mr_grey",
+      "target_2": null,
+      "required_state": [],
+      "events": [
+        { "event": "show_dialogue", "text": "Mr. Grey: 'No one leaves before dawn without a stamped pass. Madame's rules.'" }
+      ]
+    },
+    {
+      "action": "USE",
+      "target_1": "blank_pass",
+      "target_2": "mr_grey",
+      "required_state": [{ "target_id": "blank_pass", "state": null }],
+      "events": [
+        { "event": "show_dialogue", "text": "Mr. Grey: 'This pass is unstamped. Return to the party.'" }
+      ]
+    },
+    {
+      "action": "USE",
+      "target_1": "stamped_pass",
+      "target_2": "mr_grey",
+      "required_state": [{ "target_id": "stamped_pass", "state": null }],
+      "events": [
+        { "event": "show_dialogue", "text": "Mr. Grey studies the seal for a long moment, then unlocks the door. 'Good night.'" },
+        { "event": "trigger_end", "outcome": "WIN", "text": "Cold night air fills your lungs. You walk down the drive and never look back at the house of Madame Voss." }
+      ]
+    },
+    {
+      "action": "TALK",
+      "target_1": "madame_voss",
+      "target_2": null,
+      "required_state": [{ "target_id": "host_seal", "state": null }],
+      "events": [
+        { "event": "show_dialogue", "text": "Madame Voss's eyes drop to your hand. 'That is MY seal.'" },
+        { "event": "trigger_end", "outcome": "LOSS", "text": "Madame Voss takes back her seal and sends you to the guest wing. Your name joins the others in her guest books." }
+      ]
+    },
+    {
+      "action": "TALK",
+      "target_1": "madame_voss",
+      "target_2": null,
+      "required_state": [],
+      "events": [
+        { "event": "show_dialogue", "text": "Madame Voss: 'Leaving so soon? Nonsense. The party has only just begun. It always has only just begun.'" }
+      ]
+    },
+    {
+      "action": "USE",
+      "target_1": "stamped_pass",
+      "target_2": "madame_voss",
+      "required_state": [{ "target_id": "stamped_pass", "state": null }],
+      "events": [
+        { "event": "trigger_end", "outcome": "LOSS", "text": "Madame Voss tears your forged pass in half. 'Such a shame. You will stay with us forever.'" }
+      ]
+    },
+    {
+      "action": "INSPECT",
+      "target_1": "livingroom_cat",
+      "target_2": null,
+      "required_state": [],
+      "events": [
+        { "event": "show_dialogue", "text": "The cat blinks slowly, then stares at the office as if to say: look harder in there." }
+      ]
+    }
+  ]
+}

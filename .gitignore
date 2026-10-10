@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env.local
+
+# Licensed third-party art (not redistributable): fonts, character sheets, tilesets
+public/assets/fonts/
+public/assets/sprites/*.png
+!public/assets/sprites/icons.png
+public/assets/tilesets/
+assets/tilesets/

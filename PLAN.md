@@ -109,7 +109,7 @@ The map is authored in **Tiled** and exported as JSON to `public/assets/maps/map
 
 - **Orientation / size:** Orthogonal, **16×16 px** tiles.
 - **Tilesets:** Must be **embedded** in the map, not external `.tsx` files. Tileset images go in `public/assets/tilesets/`. The game uses each tileset's name in Tiled as its Phaser texture key when loading the image.
-- **Two-phase loading:** The game can't know which tileset images to load until it has read the map. `BootScene` loads `map.json` first, then loads each tileset image from `public/assets/tilesets/<file name>`. `<file name>` is the last part of the tileset's `image` path in the JSON. Tiled stores that path relative to the map, e.g. `../tilesets/interior.png` → `interior.png`.
+- **Two-phase loading:** The game can't know which tileset images to load until it has read the map. `BootScene` loads `map.json` first, then loads each tileset image from `public/assets/tilesets/<file name>`. `<file name>` is the last part of the tileset's `image` path in the JSON. Tiled stores that path relative to the map, e.g. `../tilesets/interior.png` → `interior.png`. Tileset images taller than `MAX_TILESET_TEXTURE_HEIGHT` (e.g. the 256×17024 `interiors.png`, which exceeds common GPU texture limits) are sliced at load into row bands; each band becomes its own texture and tileset with a contiguous `firstgid` range, so tile GIDs are unchanged. The first band keeps the tileset's name as its texture key.
 - **Tile layers:**
   - The map has exactly four tile layers, named `floor`, `walls`, `furniture`, and `borders`. They are drawn in the order they appear in the map file (bottom to top).
     - `floor`: floor tiles.
@@ -150,8 +150,8 @@ Sprite files live in `public/assets/sprites/`. Player and NPC frames are **16×3
 
 | File | Layout |
 |---|---|
-| `player.png` | Supplied 896×656 animation sheet. Use 16×32 frames from the second row for idle and the third row for walking (zero-based rows 1 and 2). Each row's first 24 frames contains four groups of six, in order: right, forward (down), left, back (up). Ignore all other frames. |
-| `npc1.png` through `npc7.png` | Seven separate animation sheets with the same frame layout as `player.png`. `sprite_index` is zero-based: 0 selects `npc1.png`, 1 selects `npc2.png`, through 6 selecting `npc7.png`. NPCs do not animate: use only the first down-facing idle frame, a 16×32 rectangle at `x = 96`, `y = 32`, from each sheet. No combined `npcs.png` is required. |
+| `player.png` | Supplied 896×656 animation sheet. Use 16×32 frames from the second row for idle and the third row for walking (zero-based rows 1 and 2). Each row's first 24 frames contains four groups of six, in order: right, back (up), left, forward (down). Ignore all other frames. |
+| `npc1.png` through `npc7.png` | Seven separate animation sheets with the same frame layout as `player.png`. `sprite_index` is zero-based: 0 selects `npc1.png`, 1 selects `npc2.png`, through 6 selecting `npc7.png`. NPCs do not animate: use only the first down-facing idle frame, a 16×32 rectangle at `x = 288`, `y = 32`, from each sheet. No combined `npcs.png` is required. |
 | `npcs.json` | JSON array of exactly seven strings, one short appearance description (1–80 characters) per NPC sheet. Entries are in file order: `npc1.png` through `npc7.png`, corresponding to `sprite_index` 0–6. The descriptions are sent in the prompt so the AI can pick fitting sprites. |
 | `icons.png` | 5 frames in one row, in this order: `icon_paper`, `icon_bottle`, `icon_tool`, `icon_trinket`, `icon_hazard`. |
 
@@ -160,9 +160,9 @@ Sprite files live in `public/assets/sprites/`. Player and NPC frames are **16×3
 | Facing | `direction_offset` | Columns (zero-based) |
 |---|---|---|
 | Right | 0 | 0–5 |
-| Down (forward) | 6 | 6–11 |
+| Up (back) | 6 | 6–11 |
 | Left | 12 | 12–17 |
-| Up (back) | 18 | 18–23 |
+| Down (forward) | 18 | 18–23 |
 
 Create one looping six-frame idle animation and one looping six-frame walking animation per direction. Movement selects walking; stopping selects idle for the last facing direction. Animation frame rates are tunable constants in `src/config.ts`. Keep the sprite origin centered and its physics body fixed across animation frames.
 
@@ -403,7 +403,7 @@ One generic handler runs every interaction. No item or character has custom hard
 
 - Each launch shows the key-entry form: a **plain HTML form** (not a Phaser DOM element) placed over the game canvas and removed from the DOM after submit. It has a password input (`autocomplete="off"`) and **Start** and **Play built-in scenario** buttons. Start with an empty key does the same as Play built-in scenario: it loads the default scenario for the chosen genre.
 - The key stays in memory only and is dropped once loading finishes or the key is rejected. Never write it to `localStorage`, `sessionStorage`, cookies, or URLs. Never log it, and never put it in prompt content.
-- **Rejected key:** If OpenAI returns 401 or 403, drop the key, return to the key-entry form with an empty field, and show "API key was rejected." The player can enter another key or play the built-in scenario.
+- **Rejected key:** If OpenAI returns 401 or 403, drop the key, return to the key-entry form with an empty field, and show "API key was rejected." The player can enter another key or play the built-in scenario. Browsers can't see some 401s from `/v1/responses` (OpenAI omits the CORS header on them, so they surface as connection errors). After a non-timeout connection error, the pipeline calls `models.list()` once (not an LLM request); a 401/403 there counts as a rejected key.
 - **Development key:** When `import.meta.env.DEV` is true, `VITE_OPENAI_API_KEY` from a git-ignored `.env.local` pre-fills the key field. Read it **only** inside an `import.meta.env.DEV` branch so production builds drop it.
 - **Build-time leak check:** A Vite plugin (build only, `closeBundle`) scans `dist/`. The build fails if any file contains the `VITE_OPENAI_API_KEY` value (loaded with `loadEnv`; this check is skipped when the value is unset or empty) or matches `(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{20,}`. The lookbehind makes `sk-` match only at the start of a token, so ordinary strings such as `task-…` or `desk-…` in minified code don't trigger it.
 - Any key used in a browser can be read by that browser's user. Git-ignoring the dev key only stops it from being committed; it does not make a browser key secret.
